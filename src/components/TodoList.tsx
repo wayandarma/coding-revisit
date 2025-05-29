@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../lib/supabase";
+import { User } from "@supabase/supabase-js";
+import AITodoGenerator from "./AITodoGenerator";
 
 type Todo = {
   id: string;
@@ -17,7 +19,8 @@ export default function TodoList() {
   const [newTask, setNewTask] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [isAIModalOpen, setIsAIModalOpen] = useState(false);
   const router = useRouter();
 
   // Memeriksa status autentikasi pengguna
@@ -124,29 +127,32 @@ export default function TodoList() {
     };
 
     // Optimistic update
-    setTodos(prev => [newTodo, ...prev]);
+    setTodos((prev) => [newTodo, ...prev]);
     setNewTask("");
 
     try {
-      const { data, error } = await supabase.from("todos").insert([
-        {
-          task: newTask,
-          user_id: user.id,
-          is_complete: false,
-        },
-      ]).select();
+      const { data, error } = await supabase
+        .from("todos")
+        .insert([
+          {
+            task: newTask,
+            user_id: user.id,
+            is_complete: false,
+          },
+        ])
+        .select();
 
       if (error) throw error;
-      
+
       // Replace temp todo with real one
       if (data && data[0]) {
-        setTodos(prev => prev.map(todo => 
-          todo.id === tempId ? data[0] as Todo : todo
-        ));
+        setTodos((prev) =>
+          prev.map((todo) => (todo.id === tempId ? (data[0] as Todo) : todo))
+        );
       }
     } catch (error: any) {
       // Revert optimistic update on error
-      setTodos(prev => prev.filter(todo => todo.id !== tempId));
+      setTodos((prev) => prev.filter((todo) => todo.id !== tempId));
       setNewTask(newTask); // Restore the input
       setError(error.message);
     }
@@ -155,9 +161,11 @@ export default function TodoList() {
   // Menandai tugas sebagai selesai atau belum selesai
   const toggleTodoStatus = async (id: string, currentStatus: boolean) => {
     // Optimistic update
-    setTodos(prev => prev.map(todo => 
-      todo.id === id ? { ...todo, is_complete: !currentStatus } : todo
-    ));
+    setTodos((prev) =>
+      prev.map((todo) =>
+        todo.id === id ? { ...todo, is_complete: !currentStatus } : todo
+      )
+    );
 
     try {
       const { error } = await supabase
@@ -168,9 +176,11 @@ export default function TodoList() {
       if (error) throw error;
     } catch (error: any) {
       // Revert optimistic update on error
-      setTodos(prev => prev.map(todo => 
-        todo.id === id ? { ...todo, is_complete: currentStatus } : todo
-      ));
+      setTodos((prev) =>
+        prev.map((todo) =>
+          todo.id === id ? { ...todo, is_complete: currentStatus } : todo
+        )
+      );
       setError(error.message);
     }
   };
@@ -178,10 +188,10 @@ export default function TodoList() {
   // Menghapus tugas
   const deleteTodo = async (id: string) => {
     // Store the todo for potential rollback
-    const todoToDelete = todos.find(todo => todo.id === id);
-    
+    const todoToDelete = todos.find((todo) => todo.id === id);
+
     // Optimistic update
-    setTodos(prev => prev.filter(todo => todo.id !== id));
+    setTodos((prev) => prev.filter((todo) => todo.id !== id));
 
     try {
       const { error } = await supabase.from("todos").delete().eq("id", id);
@@ -190,11 +200,12 @@ export default function TodoList() {
     } catch (error: any) {
       // Revert optimistic update on error
       if (todoToDelete) {
-        setTodos(prev => {
+        setTodos((prev) => {
           const newTodos = [...prev];
           // Insert back in original position based on created_at
-          const insertIndex = newTodos.findIndex(todo => 
-            new Date(todo.created_at) < new Date(todoToDelete.created_at)
+          const insertIndex = newTodos.findIndex(
+            (todo) =>
+              new Date(todo.created_at) < new Date(todoToDelete.created_at)
           );
           if (insertIndex === -1) {
             newTodos.push(todoToDelete);
@@ -205,8 +216,58 @@ export default function TodoList() {
         });
       }
       setError(error.message);
-     }
-   };
+    }
+  };
+
+  // Fungsi untuk generate todos dengan AI (dummy implementation)
+  const handleAIGenerate = async (
+    description: string,
+    minTasks: number,
+    maxTasks: number
+  ) => {
+    try {
+      // Dummy data untuk testing UI
+      const dummyTodos = [
+        "Riset destinasi wisata di Bali",
+        "Booking tiket pesawat",
+        "Reservasi hotel atau villa",
+        "Buat itinerary harian",
+        "Siapkan dokumen perjalanan",
+        "Pack barang-barang penting",
+        "Download aplikasi transportasi lokal",
+        "Tukar uang ke rupiah",
+      ];
+
+      // Simulasi random selection berdasarkan range
+      const numTasks =
+        Math.floor(Math.random() * (maxTasks - minTasks + 1)) + minTasks;
+      const selectedTasks = dummyTodos
+        .sort(() => 0.5 - Math.random())
+        .slice(0, numTasks);
+
+      // Simulasi delay API
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // Add generated todos to database
+      for (const task of selectedTasks) {
+        const { error } = await supabase.from("todos").insert([
+          {
+            task: task,
+            is_complete: false,
+            user_id: user?.id,
+          },
+        ]);
+
+        if (error) throw error;
+      }
+
+      // Success message bisa ditambahkan di sini
+      console.log(`Successfully generated ${selectedTasks.length} todos`);
+    } catch (error: any) {
+      setError(error.message);
+      throw error;
+    }
+  };
 
   if (!user) {
     return (
@@ -221,20 +282,42 @@ export default function TodoList() {
       <h2 className="text-xl font-bold mb-4">Daftar Tugas</h2>
 
       <form onSubmit={addTodo} className="mb-6">
-        <div className="flex">
-          <input
-            type="text"
-            value={newTask}
-            onChange={(e) => setNewTask(e.target.value)}
-            placeholder="Tambahkan tugas baru..."
-            className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-l-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-            required
-          />
+        <div className="flex gap-2">
+          <div className="flex flex-1">
+            <input
+              type="text"
+              value={newTask}
+              onChange={(e) => setNewTask(e.target.value)}
+              placeholder="Tambahkan tugas baru..."
+              className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-l-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+            />
+            <button
+              type="submit"
+              className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-r-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+            >
+              Tambah
+            </button>
+          </div>
           <button
-            type="submit"
-            className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-r-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+            type="button"
+            onClick={() => setIsAIModalOpen(true)}
+            className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-medium py-2 px-3 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 transition-all flex items-center justify-center group"
+            title="Generate tugas dengan AI"
           >
-            Tambah
+            <svg
+              className="w-5 h-5 group-hover:scale-110 transition-transform"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M13 10V3L4 14h7v7l9-11h-7z"
+              />
+            </svg>
           </button>
         </div>
       </form>
@@ -300,6 +383,13 @@ export default function TodoList() {
           ))}
         </ul>
       )}
+
+      {/* AI Todo Generator Modal */}
+      <AITodoGenerator
+        isOpen={isAIModalOpen}
+        onClose={() => setIsAIModalOpen(false)}
+        onGenerate={handleAIGenerate}
+      />
     </div>
   );
 }
