@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../lib/supabase";
 import { User } from "@supabase/supabase-js";
+import { motion, AnimatePresence } from "framer-motion";
 import AITodoGenerator from "./AITodoGenerator";
 
 type Todo = {
@@ -160,12 +161,22 @@ export default function TodoList() {
 
   // Menandai tugas sebagai selesai atau belum selesai
   const toggleTodoStatus = async (id: string, currentStatus: boolean) => {
-    // Optimistic update
-    setTodos((prev) =>
-      prev.map((todo) =>
+    // Optimistic update with sorting
+    setTodos((prev) => {
+      const updatedTodos = prev.map((todo) =>
         todo.id === id ? { ...todo, is_complete: !currentStatus } : todo
-      )
-    );
+      );
+      
+      // Sort todos: incomplete tasks first, then completed tasks
+      return updatedTodos.sort((a, b) => {
+        if (a.is_complete === b.is_complete) {
+          // If both have same completion status, sort by created_at (newest first)
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        }
+        // Incomplete tasks (false) come before completed tasks (true)
+        return a.is_complete ? 1 : -1;
+      });
+    });
 
     try {
       const { error } = await supabase
@@ -176,11 +187,19 @@ export default function TodoList() {
       if (error) throw error;
     } catch (error: any) {
       // Revert optimistic update on error
-      setTodos((prev) =>
-        prev.map((todo) =>
+      setTodos((prev) => {
+        const revertedTodos = prev.map((todo) =>
           todo.id === id ? { ...todo, is_complete: currentStatus } : todo
-        )
-      );
+        );
+        
+        // Re-sort after reverting
+        return revertedTodos.sort((a, b) => {
+          if (a.is_complete === b.is_complete) {
+            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+          }
+          return a.is_complete ? 1 : -1;
+        });
+      });
       setError(error.message);
     }
   };
@@ -227,26 +246,26 @@ export default function TodoList() {
   ) => {
     try {
       // Call API untuk generate todos dengan Gemini
-      const response = await fetch('/api/generate-todos', {
-        method: 'POST',
+      const response = await fetch("/api/generate-todos", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           description,
           minTasks,
-          maxTasks
-        })
+          maxTasks,
+        }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Gagal menghasilkan tugas');
+        throw new Error(data.error || "Gagal menghasilkan tugas");
       }
 
       if (!data.success || !data.tasks || data.tasks.length === 0) {
-        throw new Error('Tidak ada tugas yang dihasilkan');
+        throw new Error("Tidak ada tugas yang dihasilkan");
       }
 
       // Add generated todos to database dengan optimistic update
@@ -255,11 +274,11 @@ export default function TodoList() {
         task: task,
         is_complete: false,
         user_id: user?.id,
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
       }));
 
       // Optimistic update - tambahkan ke state dulu
-      setTodos(prev => [...prev, ...newTodos]);
+      setTodos((prev) => [...prev, ...newTodos]);
 
       // Insert ke database
       const { data: insertedTodos, error } = await supabase
@@ -277,9 +296,11 @@ export default function TodoList() {
 
       // Update state dengan data yang benar dari database
       if (insertedTodos) {
-        setTodos(prev => {
+        setTodos((prev) => {
           // Remove temporary todos
-          const withoutTemp = prev.filter(todo => !todo.id.startsWith('temp-'));
+          const withoutTemp = prev.filter(
+            (todo) => !todo.id.startsWith("temp-")
+          );
           // Add real todos from database
           return [...withoutTemp, ...insertedTodos];
         });
@@ -288,7 +309,7 @@ export default function TodoList() {
       console.log(`Successfully generated ${data.tasks.length} todos with AI`);
     } catch (error: any) {
       // Rollback optimistic update on error
-      setTodos(prev => prev.filter(todo => !todo.id.startsWith('temp-')));
+      setTodos((prev) => prev.filter((todo) => !todo.id.startsWith("temp-")));
       setError(error.message);
       throw error;
     }
@@ -303,7 +324,7 @@ export default function TodoList() {
   }
 
   return (
-    <div className="w-full max-w-md mx-auto p-4">
+    <div className="w-full max-w-md mx-auto">
       <h2 className="text-xl font-bold mb-4">Daftar Tugas</h2>
 
       <form onSubmit={addTodo} className="mb-6">
@@ -362,51 +383,70 @@ export default function TodoList() {
           <p>Belum ada tugas. Tambahkan tugas pertama Anda!</p>
         </div>
       ) : (
-        <ul className="space-y-2">
-          {todos.map((todo) => (
-            <li
-              key={todo.id}
-              className="flex items-center justify-between p-3 bg-white dark:bg-gray-800 rounded-md shadow-sm"
-            >
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={todo.is_complete}
-                  onChange={() => toggleTodoStatus(todo.id, todo.is_complete)}
-                  className="mr-3 h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <span
-                  className={`${
-                    todo.is_complete
-                      ? "line-through text-gray-500 dark:text-gray-400"
-                      : ""
-                  }`}
-                >
-                  {todo.task}
-                </span>
-              </div>
-              <button
-                onClick={() => deleteTodo(todo.id)}
-                className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 focus:outline-none"
+        <AnimatePresence>
+          <ul className="space-y-2">
+            {todos.map((todo) => (
+              <motion.li
+                key={todo.id}
+                layout
+                initial={{ opacity: 0, y: -20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, x: -100 }}
+                transition={{ 
+                  layout: { duration: 0.3 },
+                  opacity: { duration: 0.2 },
+                  y: { duration: 0.2 },
+                  x: { duration: 0.2 }
+                }}
+                className="flex items-center justify-between p-3 bg-white dark:bg-gray-800 rounded-md shadow-sm"
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={todo.is_complete}
+                    onChange={() => toggleTodoStatus(todo.id, todo.is_complete)}
+                    className="mr-3 h-5 w-5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                   />
-                </svg>
-              </button>
-            </li>
-          ))}
-        </ul>
+                  <motion.span
+                    animate={{
+                      opacity: todo.is_complete ? 0.6 : 1,
+                      scale: todo.is_complete ? 0.95 : 1
+                    }}
+                    transition={{ duration: 0.2 }}
+                    className={`${
+                      todo.is_complete
+                        ? "line-through text-gray-500 dark:text-gray-400"
+                        : ""
+                    }`}
+                  >
+                    {todo.task}
+                  </motion.span>
+                </div>
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={() => deleteTodo(todo.id)}
+                  className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 focus:outline-none"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1 1h-4a1 1 0 00-1 1v3M4 7h16"
+                    />
+                  </svg>
+                </motion.button>
+              </motion.li>
+            ))}
+          </ul>
+        </AnimatePresence>
       )}
 
       {/* AI Todo Generator Modal */}
