@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "../lib/supabase";
 
 type Todo = {
@@ -17,11 +18,16 @@ export default function TodoList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState<any>(null);
+  const router = useRouter();
 
   // Memeriksa status autentikasi pengguna
   useEffect(() => {
     const fetchUser = async () => {
       const { data } = await supabase.auth.getUser();
+      if (!data.user) {
+        router.push("/auth");
+        return;
+      }
       setUser(data.user);
     };
 
@@ -30,6 +36,10 @@ export default function TodoList() {
     // Mendengarkan perubahan status autentikasi
     const { data: authListener } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        if (!session?.user) {
+          router.push("/auth");
+          return;
+        }
         setUser(session?.user || null);
       }
     );
@@ -37,7 +47,7 @@ export default function TodoList() {
     return () => {
       authListener.subscription.unsubscribe();
     };
-  }, []);
+  }, [router]);
 
   // Mengambil daftar tugas dari Supabase
   useEffect(() => {
@@ -76,7 +86,20 @@ export default function TodoList() {
         },
         (payload) => {
           console.log("Change received!", payload);
-          fetchTodos();
+
+          if (payload.eventType === "INSERT") {
+            setTodos((prev) => [payload.new as Todo, ...prev]);
+          } else if (payload.eventType === "UPDATE") {
+            setTodos((prev) =>
+              prev.map((todo) =>
+                todo.id === payload.new.id ? (payload.new as Todo) : todo
+              )
+            );
+          } else if (payload.eventType === "DELETE") {
+            setTodos((prev) =>
+              prev.filter((todo) => todo.id !== payload.old.id)
+            );
+          }
         }
       )
       .subscribe();
@@ -91,24 +114,51 @@ export default function TodoList() {
     e.preventDefault();
     if (!newTask.trim() || !user) return;
 
+    const tempId = `temp-${Date.now()}`;
+    const newTodo: Todo = {
+      id: tempId,
+      task: newTask,
+      user_id: user.id,
+      is_complete: false,
+      created_at: new Date().toISOString(),
+    };
+
+    // Optimistic update
+    setTodos(prev => [newTodo, ...prev]);
+    setNewTask("");
+
     try {
-      const { error } = await supabase.from("todos").insert([
+      const { data, error } = await supabase.from("todos").insert([
         {
           task: newTask,
           user_id: user.id,
           is_complete: false,
         },
-      ]);
+      ]).select();
 
       if (error) throw error;
-      setNewTask("");
+      
+      // Replace temp todo with real one
+      if (data && data[0]) {
+        setTodos(prev => prev.map(todo => 
+          todo.id === tempId ? data[0] as Todo : todo
+        ));
+      }
     } catch (error: any) {
+      // Revert optimistic update on error
+      setTodos(prev => prev.filter(todo => todo.id !== tempId));
+      setNewTask(newTask); // Restore the input
       setError(error.message);
     }
   };
 
   // Menandai tugas sebagai selesai atau belum selesai
   const toggleTodoStatus = async (id: string, currentStatus: boolean) => {
+    // Optimistic update
+    setTodos(prev => prev.map(todo => 
+      todo.id === id ? { ...todo, is_complete: !currentStatus } : todo
+    ));
+
     try {
       const { error } = await supabase
         .from("todos")
@@ -117,20 +167,46 @@ export default function TodoList() {
 
       if (error) throw error;
     } catch (error: any) {
+      // Revert optimistic update on error
+      setTodos(prev => prev.map(todo => 
+        todo.id === id ? { ...todo, is_complete: currentStatus } : todo
+      ));
       setError(error.message);
     }
   };
 
   // Menghapus tugas
   const deleteTodo = async (id: string) => {
+    // Store the todo for potential rollback
+    const todoToDelete = todos.find(todo => todo.id === id);
+    
+    // Optimistic update
+    setTodos(prev => prev.filter(todo => todo.id !== id));
+
     try {
       const { error } = await supabase.from("todos").delete().eq("id", id);
 
       if (error) throw error;
     } catch (error: any) {
+      // Revert optimistic update on error
+      if (todoToDelete) {
+        setTodos(prev => {
+          const newTodos = [...prev];
+          // Insert back in original position based on created_at
+          const insertIndex = newTodos.findIndex(todo => 
+            new Date(todo.created_at) < new Date(todoToDelete.created_at)
+          );
+          if (insertIndex === -1) {
+            newTodos.push(todoToDelete);
+          } else {
+            newTodos.splice(insertIndex, 0, todoToDelete);
+          }
+          return newTodos;
+        });
+      }
       setError(error.message);
-    }
-  };
+     }
+   };
 
   if (!user) {
     return (

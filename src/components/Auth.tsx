@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "../lib/supabase";
 
 export default function Auth() {
@@ -11,6 +12,20 @@ export default function Auth() {
     type: "error" | "success";
     text: string;
   } | null>(null);
+  const router = useRouter();
+
+  // Check if user is already authenticated
+  useEffect(() => {
+    const checkUser = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user) {
+        router.push("/todos");
+      }
+    };
+    checkUser();
+  }, [router]);
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -18,12 +33,30 @@ export default function Auth() {
     setMessage(null);
 
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
       });
 
       if (error) throw error;
+
+      // Create profile for the new user
+      if (data.user) {
+        const { error: profileError } = await supabase.from("profiles").insert([
+          {
+            id: data.user.id,
+            username: email.split("@")[0],
+            full_name: "",
+            avatar_url: null,
+            updated_at: new Date().toISOString(),
+          },
+        ]);
+
+        if (profileError) {
+          console.error("Error creating profile:", profileError);
+        }
+      }
+
       setMessage({
         type: "success",
         text: "Pendaftaran berhasil! Silakan periksa email Anda untuk konfirmasi.",
@@ -44,13 +77,20 @@ export default function Auth() {
     setMessage(null);
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (error) throw error;
-      setMessage({ type: "success", text: "Login berhasil!" });
+
+      if (data.user) {
+        setMessage({ type: "success", text: "Login berhasil!" });
+        // Redirect to todos page after successful login
+        setTimeout(() => {
+          router.push("/todos");
+        }, 1000);
+      }
     } catch (error: any) {
       setMessage({
         type: "error",

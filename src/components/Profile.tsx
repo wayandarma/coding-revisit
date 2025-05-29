@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "../lib/supabase";
 
 type Profile = {
@@ -21,11 +22,16 @@ export default function Profile() {
     username: "",
     full_name: "",
   });
+  const router = useRouter();
 
   // Memeriksa status autentikasi pengguna
   useEffect(() => {
     const fetchUser = async () => {
       const { data } = await supabase.auth.getUser();
+      if (!data.user) {
+        router.push("/auth");
+        return;
+      }
       setUser(data.user);
     };
 
@@ -34,6 +40,10 @@ export default function Profile() {
     // Mendengarkan perubahan status autentikasi
     const { data: authListener } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        if (!session?.user) {
+          router.push("/auth");
+          return;
+        }
         setUser(session?.user || null);
       }
     );
@@ -41,7 +51,7 @@ export default function Profile() {
     return () => {
       authListener.subscription.unsubscribe();
     };
-  }, []);
+  }, [router]);
 
   // Mengambil data profil dari Supabase
   useEffect(() => {
