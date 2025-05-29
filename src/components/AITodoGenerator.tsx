@@ -17,20 +17,33 @@ export default function AITodoGenerator({
   const [minTasks, setMinTasks] = useState(3);
   const [maxTasks, setMaxTasks] = useState(8);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!description.trim()) return;
 
     setIsGenerating(true);
+    setErrorMessage("");
+    setSuccessMessage("");
+
     try {
       await onGenerate(description, minTasks, maxTasks);
-      setDescription("");
-      setMinTasks(3);
-      setMaxTasks(8);
-      onClose();
-    } catch (error) {
-      console.error("Error generating todos:", error);
+      setSuccessMessage(`Berhasil menghasilkan tugas dengan AI! 🎉`);
+
+      // Auto close modal after success
+      setTimeout(() => {
+        setDescription("");
+        setMinTasks(3);
+        setMaxTasks(8);
+        setSuccessMessage("");
+        onClose();
+      }, 1500);
+    } catch (error: any) {
+      setErrorMessage(
+        error.message || "Terjadi kesalahan saat menghasilkan tugas"
+      );
     } finally {
       setIsGenerating(false);
     }
@@ -41,6 +54,8 @@ export default function AITodoGenerator({
       setDescription("");
       setMinTasks(3);
       setMaxTasks(8);
+      setSuccessMessage("");
+      setErrorMessage("");
       onClose();
     }
   };
@@ -166,32 +181,82 @@ export default function AITodoGenerator({
             </div>
           </div>
 
-          {/* Info */}
-          <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-md p-3">
-            <div className="flex items-start space-x-2">
-              <svg
-                className="w-5 h-5 text-purple-600 dark:text-purple-400 mt-0.5 flex-shrink-0"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                />
-              </svg>
-              <div className="text-sm text-purple-700 dark:text-purple-300">
-                <p className="font-medium mb-1">Tips untuk hasil terbaik:</p>
-                <ul className="text-xs space-y-1">
-                  <li>• Berikan konteks yang jelas dan spesifik</li>
-                  <li>• Sebutkan timeline atau deadline jika ada</li>
-                  <li>• Jelaskan tujuan akhir yang ingin dicapai</li>
-                </ul>
+          {/* Success Message */}
+          {successMessage && (
+            <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-md p-3">
+              <div className="flex items-center space-x-2">
+                <svg
+                  className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+                <p className="text-sm text-green-700 dark:text-green-300 font-medium">
+                  {successMessage}
+                </p>
               </div>
             </div>
-          </div>
+          )}
+
+          {/* Error Message */}
+          {errorMessage && (
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3">
+              <div className="flex items-start space-x-2">
+                <svg
+                  className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                <p className="text-sm text-red-700 dark:text-red-300">
+                  {errorMessage}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Info */}
+          {!successMessage && !errorMessage && (
+            <div className="bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-md p-3">
+              <div className="flex items-start space-x-2">
+                <svg
+                  className="w-5 h-5 text-purple-600 dark:text-purple-400 mt-0.5 flex-shrink-0"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                <div className="text-sm text-purple-700 dark:text-purple-300">
+                  <p className="font-medium mb-1">Tips untuk hasil terbaik:</p>
+                  <ul className="text-xs space-y-1">
+                    <li>• Berikan konteks yang jelas dan spesifik</li>
+                    <li>• Sebutkan timeline atau deadline jika ada</li>
+                    <li>• Jelaskan tujuan akhir yang ingin dicapai</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Actions */}
           <div className="flex space-x-3 pt-4">

@@ -219,51 +219,76 @@ export default function TodoList() {
     }
   };
 
-  // Fungsi untuk generate todos dengan AI (dummy implementation)
+  // Fungsi untuk generate todos dengan AI menggunakan Gemini API
   const handleAIGenerate = async (
     description: string,
     minTasks: number,
     maxTasks: number
   ) => {
     try {
-      // Dummy data untuk testing UI
-      const dummyTodos = [
-        "Riset destinasi wisata di Bali",
-        "Booking tiket pesawat",
-        "Reservasi hotel atau villa",
-        "Buat itinerary harian",
-        "Siapkan dokumen perjalanan",
-        "Pack barang-barang penting",
-        "Download aplikasi transportasi lokal",
-        "Tukar uang ke rupiah",
-      ];
+      // Call API untuk generate todos dengan Gemini
+      const response = await fetch('/api/generate-todos', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          description,
+          minTasks,
+          maxTasks
+        })
+      });
 
-      // Simulasi random selection berdasarkan range
-      const numTasks =
-        Math.floor(Math.random() * (maxTasks - minTasks + 1)) + minTasks;
-      const selectedTasks = dummyTodos
-        .sort(() => 0.5 - Math.random())
-        .slice(0, numTasks);
+      const data = await response.json();
 
-      // Simulasi delay API
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      if (!response.ok) {
+        throw new Error(data.error || 'Gagal menghasilkan tugas');
+      }
 
-      // Add generated todos to database
-      for (const task of selectedTasks) {
-        const { error } = await supabase.from("todos").insert([
-          {
+      if (!data.success || !data.tasks || data.tasks.length === 0) {
+        throw new Error('Tidak ada tugas yang dihasilkan');
+      }
+
+      // Add generated todos to database dengan optimistic update
+      const newTodos = data.tasks.map((task: string) => ({
+        id: `temp-${Date.now()}-${Math.random()}`,
+        task: task,
+        is_complete: false,
+        user_id: user?.id,
+        created_at: new Date().toISOString()
+      }));
+
+      // Optimistic update - tambahkan ke state dulu
+      setTodos(prev => [...prev, ...newTodos]);
+
+      // Insert ke database
+      const { data: insertedTodos, error } = await supabase
+        .from("todos")
+        .insert(
+          data.tasks.map((task: string) => ({
             task: task,
             is_complete: false,
             user_id: user?.id,
-          },
-        ]);
+          }))
+        )
+        .select();
 
-        if (error) throw error;
+      if (error) throw error;
+
+      // Update state dengan data yang benar dari database
+      if (insertedTodos) {
+        setTodos(prev => {
+          // Remove temporary todos
+          const withoutTemp = prev.filter(todo => !todo.id.startsWith('temp-'));
+          // Add real todos from database
+          return [...withoutTemp, ...insertedTodos];
+        });
       }
 
-      // Success message bisa ditambahkan di sini
-      console.log(`Successfully generated ${selectedTasks.length} todos`);
+      console.log(`Successfully generated ${data.tasks.length} todos with AI`);
     } catch (error: any) {
+      // Rollback optimistic update on error
+      setTodos(prev => prev.filter(todo => !todo.id.startsWith('temp-')));
       setError(error.message);
       throw error;
     }
